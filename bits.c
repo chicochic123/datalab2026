@@ -178,9 +178,27 @@ int byteSwap(int x, int n, int m) {
  */
 unsigned reverse(unsigned v) {
     /*
-    感觉这个也是交换，一位一位进行交换，依旧考虑怎么取出来，mask怎么做
+    感觉这个也是交换，一位一位进行交换，依旧考虑怎么取出来，和上一个题目类似
+
+    右移 31 位 <-> 右移 0 位 取交1 交换 异或写回去
+    但感觉这样的运算符用得太多了 有没有简化的办法：for循环
     */
-    return 2;
+    
+    for(int i = 0; i < 16; i++){
+        int move_r = 31 - i;
+        int move_l = i;
+
+        int r = (v >> move_r) & 1;
+        int l = (v >> move_l) & 1;
+
+        //要不要手搓一个异或？
+        unsigned diff = ((~r) & l) | (r & (~l));
+        v = ((~v) & (diff << move_r)) | (v & (~(diff << move_r)));
+        v = ((~v) & (diff << move_l)) | (v & (~(diff << move_l)));
+        
+    }
+    
+    return v;
 }
 
 /*
@@ -195,13 +213,15 @@ int logicalShift(int x, int n) {
     /*
     先右移
     新造一个数，全1，把首位改成0，右移 不行 最后取交一定要是一个全F的数 怎么办
+    给它再补一个1 
+    问题在于怎么构造一个第n位为1其余位为0的数 
+    想用左移但是没有减法
+    用异或吗？但是感觉也没什么思路
+    可以构造高位mask再取反 因为0xFFFFFFFF和0x80000000都默认unsigned了，所以用1左移右移就可以
     取and
     */
-    int result = (x >> n) & (0x7FFFFFFF >> n);
-    printf("%x\n",(0x7FFFFFFF >> n));
-    printf("%x\n",(x >> n));
-    printf("%x %x %x\n", x, n, result);
-    return result;
+    int mask = ~(1 << 31 >> n << 1);
+    return (x >> n) & mask;
 }
 
 /*
@@ -213,7 +233,36 @@ int logicalShift(int x, int n) {
  *   Difficulty: 4
  */
 int leftBitCount(int x) {
-    return 2;
+    /*
+    找最高位的0，即取反找最高位的1
+    然后用32减一下 没有减法手搓补码
+
+    */
+    int v = ~x;
+    int IsV0 = !v;
+
+    int cmp_16 = !(!(v >> 16));
+    int move_16 = cmp_16 << 4;
+    v = v >> move_16;
+
+    int cmp_8 = !(!(v >> 8));
+    int move_8 = cmp_8 << 3;
+    v = v >> move_8;
+
+    int cmp_4 = !(!(v >> 4));
+    int move_4 = cmp_4 << 2;
+    v = v >> move_4;
+
+    int cmp_2 = !(!(v >> 2));
+    int move_2 = cmp_2 << 1;
+    v = v >> move_2;
+
+    int cmp_1 = !(!(v >> 1));
+    int move_1 = cmp_1;
+    
+    int highest_0 = move_16 | move_8 | move_4 | move_2 | move_1;
+
+    return (31 + ((~highest_0) + 1) + IsV0);
 }
 
 /*
@@ -225,7 +274,19 @@ int leftBitCount(int x) {
  *   Difficulty: 4
  */
 unsigned float_i2f(int x) {
-    return 2;
+    /*
+    符号位：保留最高位 右移31 左移31
+    阶码：127 + e(最高1所在位置)
+    尾数：从最高1往右：
+     23位能放下：去掉首位全部保留
+     23位放不下：舍入
+    */
+    s = x >> 31 << 31;
+
+    // 先把23位拿出来，最后再确定阶码
+    // 用while呢？还是数最高位呢？
+    // 包括全1的进位什么时候考虑呢？是进完位取前23位，还是用一个if把这个边界判断了呢
+
 }
 
 /*
