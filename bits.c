@@ -1,4 +1,3 @@
-#include <stdio.h>
 /* WARNING: Do not include any other libraries here,
  * otherwise you will get an error while running test.py
  * You can still use printf for debugging without including
@@ -32,8 +31,9 @@ int bitAnd(int x, int y) {
  *   Difficulty: 1
  */
 int bitXor(int x, int y) {
-    // x ^ y = ((~x) & y) | (x & (~y))
-    return ((~x) & y) | (x & (~y));
+    // x ^ y = ((~x) & y) | (x & (~y)) = ~((~((~x) & y)) & (~(x & (~y)))) 会多出一个
+    // 不能同时为0 不能同时为1
+    return (~(x & y)) & (~((~x) & (~y)));
 }
 
 /*
@@ -184,7 +184,7 @@ unsigned reverse(unsigned v) {
     但感觉这样的运算符用得太多了 有没有简化的办法：for循环
     */
     
-    for(int i = 0; i < 16; i++){
+    for(int i = 0; (!(i >> 4)); i++){
         int move_r = 31 - i;
         int move_l = i;
 
@@ -281,12 +281,84 @@ unsigned float_i2f(int x) {
      23位能放下：去掉首位全部保留
      23位放不下：舍入
     */
-    s = x >> 31 << 31;
 
-    // 先把23位拿出来，最后再确定阶码
-    // 用while呢？还是数最高位呢？
-    // 包括全1的进位什么时候考虑呢？是进完位取前23位，还是用一个if把这个边界判断了呢
+    //边界：x = 0
+    if(x == 0){
+        return 0;
+    }
 
+    int S = x & 0x80000000;
+    // 如果是负数，取一下绝对值
+    if (S){
+        x = (~x) + 1;
+    }
+
+    // 同时确定尾数和阶码
+    int i = 0; // i为前导0的个数
+    int E;
+    int M;
+    while(!(x >> (31 - i))){
+        i = i + 1;
+    }
+    E = (158 - i) << 23;
+
+
+    if(i > 7){ 
+        // 如果有效数字长度<=24 就把i那位作为阶码，i后面的放进尾数的前面，剩下的用0补齐(自动)，无需考虑舍入
+        // 边界 i == 31, 防止出现移动32位的非法情况
+        // 可以和后面的压缩在一起
+        M = (x << (i - 8)) & 0x7FFFFF; //mask一下，防止算术右移导致前面全是1
+    }
+    else
+    { 
+        int drop = 8 - i;
+        // 如果有效数字长度>24，就把i那位作为阶码，i后面的舍入到第23位，放进位数
+        M = (x >> drop) & 0x7FFFFF; //防止左面全是1，同时直接去掉最高位
+        // 舍入的时候全1的进位什么时候考虑呢？是进完位取前23位，还是用一个if把这个边界判断了呢
+        // 感觉用if会好一点吧。。。不知道
+        
+        /*
+        GRS的写法需要太多if了，因为移动32位是非法的，所以改用remainder
+
+        // 判断要不要进位 : 存g、r、s
+        int G = (x << (i + 24) >> 31) & 1; // 第24位
+        int R = (x << (i + 25) >> 31) & 1; // 第25位
+        int S = x << (i + 26); // 第26位及以后（左移版本，但是不影响判断是否为0）
+
+        if (G == 0){ // 向下舍，不动
+        }
+        else{
+            if(R | S |(M & 1)){ // 入 R=1;R=0,S=1;R=0,S=0,M为奇数
+                M = M + 1;
+                if(M >> 23){
+                    M = 0;
+                    E = E + (1<<23);
+                }
+            }
+            else{ //舍
+                
+            }
+        }
+        */
+
+        // 用remainder写，先把后drop位提出来，作为remainder，然后和首1后面全为0的比大小
+        // 不可以左移32-drop位 和0x80000000比大小 因为int有正负
+        // 直接提取末drop位
+        // 大于入，小于舍，等于看M末位的奇偶
+
+        int remainder = x & ((1 << drop) - 1);
+        int cmp = 1 << (drop - 1);
+        if (remainder + (M & 1) > cmp){ 
+            // 这里省运算符完全没想到 它的含义是 remainder > cmp 或者 M 末位 1
+            // 利用了 M & 1 只可能是 0 和 1 的性质
+            M = M + 1;
+            if(M >> 23){
+                M = 0;
+                E = E + 0x800000;
+            }
+        }
+    }
+    return S | E | M;
 }
 
 /*
@@ -300,8 +372,37 @@ unsigned float_i2f(int x) {
  *   Max ops: 30
  *   Difficulty: 4
  */
+ /*
+ 题意: 把unsigned按照float理解，返回该float*2的结果，装在32位unsigned里面
+ */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    int E = (uf & 0x7F800000) >> 23;
+    int M = uf & 0x7FFFFF;
+    int S = uf & 0x80000000;
+
+    if(E == 255){
+        return uf;
+    }
+    if(E == 254){ 
+        // 这里不够32位 取反会出问题
+        // 只要乘二一定是无穷大
+        return S | 0x7F800000;
+    }
+    if(E == 0){
+        if(!M){
+            return uf;
+        }
+        else
+        {
+            M = M << 1;
+            return S | M;
+        }
+    }
+    else{
+        E = (E + 1) << 23;
+        return S | E | M;
+    }
+    
 }
 
 /*
@@ -318,7 +419,37 @@ unsigned floatScale2(unsigned uf) {
  *   Difficulty: 3
  */
 int float64_f2i(unsigned uf1, unsigned uf2) {
-    return 2;
+    int S = uf2 & 0x80000000;
+    int E = (uf2 & 0x7FF00000) >> 20;
+    int e = E - 1023;
+    int abs; // 先计算绝对值，最后根据S看要不要返回负值
+
+    if (e < 0){
+        return 0;
+    }
+    if (e > 30){ 
+        // 这里边界有一个合并简化
+        // e >= 32 的时候一定溢出
+        // e == 31 时：32位int的范围 (-2^31) ~ (2^31 - 1)
+        // 也就是说如果 s 表示正数，小数点右移 31 位一定溢出
+        // 如果 s 表示负数，只有尾数为 0 的时候，小数点右移 31 位刚好 -2^31，不溢出
+        // 但它就写作 0x80000000, 所以可以一同返回
+        return 0x80000000;
+    }
+    else{
+        if(e < 21){
+            abs = (1 << e) | ((uf2 & 0xFFFFF) >> (20 - e));
+        }
+        else{
+            abs = (1 << e) | ((uf2 & 0xFFFFF) << (e - 20)) | (uf1 >> (32 - (e - 20)));
+        }
+    }
+    if(!S){
+        return abs;
+    }
+    else{
+        return -abs;
+    }
 }
 
 /*
@@ -335,5 +466,21 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   Difficulty: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if(x > 127){
+        // 超过单精度浮点数上限
+        return 0x7F800000;
+    }
+    if(x < -149){
+        // 低于非规格化数下限
+        return 0;
+    }
+    if(x > -127){
+        // -126 ~ 127 是规格化数
+        return (x + 127) << 23;
+    }
+    else{
+        // -149 ~ -127 是非规格化数
+        return 1 << (149 + x); // 非规格化数最小是 2^-149 在末位写一个1
+    }
+
 }
